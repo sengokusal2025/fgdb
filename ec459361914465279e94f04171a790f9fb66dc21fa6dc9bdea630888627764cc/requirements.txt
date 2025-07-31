@@ -1,0 +1,18 @@
+# Python requirements for data processing system
+# This project uses only standard library modules, no external dependencies required
+
+# Python version requirement
+# python>=3.6
+
+# Note: All functionality is implemented using Python standard library:
+# - argparse (command line argument parsing)
+# - os (file and directory operations)
+# - sys (system-specific parameters and functions)
+# - tempfile (temporary file and directory creation for testing)
+# - shutil (high-level file operations)
+
+# If you want to add pandas for more advanced CSV handling (optional):
+# pandas>=1.0.0
+
+# For development and testing (optional):
+# pytest>=6.0.0

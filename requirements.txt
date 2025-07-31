@@ -1,0 +1,29 @@
+# FGDB (Functional Graph DataBase) - 必要なライブラリ
+
+# グラフ処理とデータ構造
+networkx>=2.5
+
+# グラフ可視化
+matplotlib>=3.3.0
+
+# 標準ライブラリの依存関係（Pythonに標準搭載）
+# - pickle (データ保存)
+# - json (設定ファイル)
+# - os (ファイル操作)
+# - sys (システム操作)
+# - hashlib (ハッシュ生成)
+# - time (タイムスタンプ)
+# - shutil (ファイルコピー)
+# - datetime (日時処理)
+# - subprocess (プロセス実行)
+# - re (正規表現)
+# - argparse (コマンドライン引数)
+
+# オプション：より良い表示のための日本語フォント
+# システムにインストールされている場合は自動的に使用されます
+# - DejaVu Sans
+# - Hiragino Sans (macOS)
+# - Yu Gothic (Windows)
+# - Meiryo (Windows)
+# - IPAexGothic (Linux)
+# - Noto Sans CJK JP (Linux)
