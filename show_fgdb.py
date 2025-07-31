@@ -1,13 +1,13 @@
 """
 FGDB Interactive Visualization Script (show_fgdb.py)
-Visualize FGDB's Management Graph (MG) and Operation Graph (OG) using pyvis
+Visualize FGDB's Management Graph (MG) and Operation Graph (OG) using vis.js
 
 Usage:
     python show_fgdb.py
 
 Features:
 1. Load FGDB data from fgdb.pickle file
-2. Interactive visualization using pyvis
+2. Interactive visualization using vis.js (without pyvis)
 3. Node shapes and colors:
    - Root: Diamond (gold)
    - Function Block: Rectangle (skyblue) 
@@ -20,8 +20,7 @@ Features:
 import os
 import sys
 import webbrowser
-import pyperclip
-from pyvis.network import Network
+import json
 from lib import FGDB
 
 
@@ -47,36 +46,23 @@ def get_node_shape_and_color(node_data):
         return "ellipse", "#CCCCCC"  # Default: ellipse, gray
 
 
-def create_network_graph(graph, blocks, title="Graph"):
+def create_graph_data(graph, blocks):
     """
-    Create a pyvis Network from NetworkX graph
+    Create vis.js compatible graph data
     
     Args:
         graph (nx.DiGraph): NetworkX directed graph
         blocks (dict): Block information dictionary
-        title (str): Graph title
         
     Returns:
-        Network: pyvis Network object
+        tuple: (nodes_list, edges_list)
     """
-    net = Network(height="600px", width="100%", bgcolor="#ffffff", font_color="black")
+    nodes_list = []
+    edges_list = []
     
-    # Configure physics
-    net.set_options("""
-    var options = {
-      "physics": {
-        "enabled": true,
-        "stabilization": {"iterations": 100}
-      },
-      "interaction": {
-        "dragNodes": true,
-        "dragView": true,
-        "zoomView": true
-      }
-    }
-    """)
+    print(f"Processing graph with {graph.number_of_nodes()} nodes and {graph.number_of_edges()} edges")
     
-    # Add nodes
+    # Create nodes data
     for node in graph.nodes():
         node_data = blocks.get(node, {})
         shape, color = get_node_shape_and_color(node_data)
@@ -89,67 +75,62 @@ def create_network_graph(graph, blocks, title="Graph"):
         name = node_data.get("name", "unknown")
         title_text = f"Category: {category}\\nName: {name}\\nCode: {node[:8]}...\\nClick to copy full code"
         
-        net.add_node(
-            node,
-            label=label,
-            shape=shape,
-            color=color,
-            title=title_text,
-            size=25
-        )
+        print(f"Adding node: {label} ({category})")
+        
+        node_obj = {
+            "id": node,
+            "label": label,
+            "shape": shape,
+            "color": color,
+            "title": title_text,
+            "size": 25,
+            "font": {"size": 14, "color": "black"}
+        }
+        
+        nodes_list.append(node_obj)
     
-    # Add edges
+    # Create edges data
     for source, target, edge_data in graph.edges(data=True):
-        # Edge label (function name for Operation Graph)
         edge_label = edge_data.get('function', '')
         
-        net.add_edge(
-            source,
-            target,
-            label=edge_label,
-            arrows="to",
-            color="gray"
-        )
+        source_label = blocks.get(source, {}).get('head', source[:8])
+        target_label = blocks.get(target, {}).get('head', target[:8])
+        print(f"Adding edge: {source_label} -> {target_label}")
+        
+        edge_obj = {
+            "from": source,
+            "to": target,
+            "label": edge_label,
+            "arrows": "to",
+            "color": "gray",
+            "width": 2
+        }
+        
+        edges_list.append(edge_obj)
     
-    return net
+    return nodes_list, edges_list
 
 
-def create_combined_html(mg_net, og_net, stats, blocks_info):
+def create_html_file(mg_nodes, mg_edges, og_nodes, og_edges, stats, blocks_info):
     """
-    Create HTML file with both graphs and control buttons
+    Create HTML file with interactive visualization
     
     Args:
-        mg_net (Network): Management Graph network
-        og_net (Network): Operation Graph network
+        mg_nodes (list): Management Graph nodes data
+        mg_edges (list): Management Graph edges data
+        og_nodes (list): Operation Graph nodes data
+        og_edges (list): Operation Graph edges data
         stats (dict): Statistics information
         blocks_info (str): Blocks information text
     """
-    # Generate HTML for individual networks
-    mg_html = mg_net.generate_html()
-    og_html = og_net.generate_html()
     
-    # Extract the network div and script from each HTML
-    import re
+    # Convert data to JSON strings
+    mg_nodes_json = json.dumps(mg_nodes, indent=2)
+    mg_edges_json = json.dumps(mg_edges, indent=2)
+    og_nodes_json = json.dumps(og_nodes, indent=2)
+    og_edges_json = json.dumps(og_edges, indent=2)
     
-    # Extract MG network content
-    mg_div_match = re.search(r'<div id="[^"]*"[^>]*></div>', mg_html)
-    mg_script_match = re.search(r'<script type="text/javascript">(.*?)</script>', mg_html, re.DOTALL)
-    
-    mg_div = mg_div_match.group(0).replace('id="', 'id="mg_') if mg_div_match else ""
-    mg_script = mg_script_match.group(1) if mg_script_match else ""
-    mg_script = mg_script.replace('document.getElementById("', 'document.getElementById("mg_')
-    
-    # Extract OG network content
-    og_div_match = re.search(r'<div id="[^"]*"[^>]*></div>', og_html)
-    og_script_match = re.search(r'<script type="text/javascript">(.*?)</script>', og_html, re.DOTALL)
-    
-    og_div = og_div_match.group(0).replace('id="', 'id="og_') if og_div_match else ""
-    og_script = og_script_match.group(1) if og_script_match else ""
-    og_script = og_script.replace('document.getElementById("', 'document.getElementById("og_')
-    
-    # Create combined HTML
-    combined_html = f"""
-<!DOCTYPE html>
+    html_content = f"""<!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
@@ -261,6 +242,10 @@ def create_combined_html(mg_net, og_net, stats, blocks_info):
             background-color: #98FB98;
             border-radius: 50%;
         }}
+        #mg-network, #og-network, #mg-single-network, #og-single-network {{
+            width: 100%;
+            height: 100%;
+        }}
     </style>
 </head>
 <body>
@@ -278,22 +263,22 @@ def create_combined_html(mg_net, og_net, stats, blocks_info):
     <div id="parallel-view" class="graph-container">
         <div class="graph-box">
             <div class="graph-title">Management Graph (MG)</div>
-            {mg_div}
+            <div id="mg-network"></div>
         </div>
         <div class="graph-box">
             <div class="graph-title">Operation Graph (OG)</div>
-            {og_div}
+            <div id="og-network"></div>
         </div>
     </div>
     
     <div id="mg-single" class="single-view">
         <div class="graph-title">Management Graph (MG) - 単独表示</div>
-        <div id="mg_single_network" style="height: 100%;"></div>
+        <div id="mg-single-network"></div>
     </div>
     
     <div id="og-single" class="single-view">
         <div class="graph-title">Operation Graph (OG) - 単独表示</div>
-        <div id="og_single_network" style="height: 100%;"></div>
+        <div id="og-single-network"></div>
     </div>
     
     <div class="info-panel">
@@ -347,42 +332,121 @@ def create_combined_html(mg_net, og_net, stats, blocks_info):
     </div>
     
     <script type="text/javascript">
+        // Graph data
+        const mgNodes = new vis.DataSet({mg_nodes_json});
+        const mgEdges = new vis.DataSet({mg_edges_json});
+        const ogNodes = new vis.DataSet({og_nodes_json});
+        const ogEdges = new vis.DataSet({og_edges_json});
+        
+        // Network options
+        const options = {{
+            physics: {{
+                enabled: true,
+                stabilization: {{iterations: 100}},
+                barnesHut: {{
+                    gravitationalConstant: -8000,
+                    centralGravity: 0.3,
+                    springLength: 95,
+                    springConstant: 0.04,
+                    damping: 0.09
+                }}
+            }},
+            interaction: {{
+                dragNodes: true,
+                dragView: true,
+                zoomView: true
+            }},
+            nodes: {{
+                borderWidth: 2,
+                shadow: true
+            }},
+            edges: {{
+                shadow: true,
+                smooth: {{
+                    type: 'continuous'
+                }}
+            }}
+        }};
+        
         // Store network instances
         let mgNetwork, ogNetwork, mgSingleNetwork, ogSingleNetwork;
         
         // Initialize networks
-        {mg_script}
-        mgNetwork = network;
-        
-        {og_script}
-        ogNetwork = network;
+        function initNetworks() {{
+            console.log('Initializing networks...');
+            console.log('MG Nodes:', mgNodes.get());
+            console.log('MG Edges:', mgEdges.get());
+            console.log('OG Nodes:', ogNodes.get());
+            console.log('OG Edges:', ogEdges.get());
+            
+            // Management Graph (parallel view)
+            mgNetwork = new vis.Network(
+                document.getElementById('mg-network'),
+                {{nodes: mgNodes, edges: mgEdges}},
+                options
+            );
+            
+            // Operation Graph (parallel view)
+            ogNetwork = new vis.Network(
+                document.getElementById('og-network'),
+                {{nodes: ogNodes, edges: ogEdges}},
+                options
+            );
+            
+            // Add click handlers
+            addClickHandler(mgNetwork, 'MG');
+            addClickHandler(ogNetwork, 'OG');
+            
+            console.log('Networks initialized successfully');
+        }}
         
         // Add click handlers for copying node codes to clipboard
-        function addClickHandler(network, blocks) {{
+        function addClickHandler(network, graphType) {{
             network.on("click", function(params) {{
+                console.log('Click event:', params);
                 if (params.nodes.length > 0) {{
                     const nodeId = params.nodes[0];
+                    console.log('Node clicked:', nodeId);
                     try {{
                         // Copy full node code to clipboard
-                        navigator.clipboard.writeText(nodeId).then(function() {{
-                            // Show notification
-                            showNotification('コードをクリップボードにコピーしました: ' + nodeId.substring(0, 16) + '...');
-                        }}).catch(function(err) {{
-                            console.error('Failed to copy to clipboard:', err);
-                            // Fallback: show the code in alert
-                            alert('コード: ' + nodeId);
-                        }});
+                        if (navigator.clipboard && navigator.clipboard.writeText) {{
+                            navigator.clipboard.writeText(nodeId).then(function() {{
+                                showNotification('コードをクリップボードにコピーしました: ' + nodeId.substring(0, 16) + '...');
+                            }}).catch(function(err) {{
+                                console.error('Failed to copy to clipboard:', err);
+                                fallbackCopy(nodeId);
+                            }});
+                        }} else {{
+                            fallbackCopy(nodeId);
+                        }}
                     }} catch (err) {{
                         console.error('Clipboard access failed:', err);
-                        alert('コード: ' + nodeId);
+                        fallbackCopy(nodeId);
                     }}
                 }}
             }});
         }}
         
-        // Add click handlers
-        addClickHandler(mgNetwork);
-        addClickHandler(ogNetwork);
+        // Fallback copy method
+        function fallbackCopy(text) {{
+            // Try to use the older execCommand method
+            const textArea = document.createElement('textarea');
+            textArea.value = text;
+            document.body.appendChild(textArea);
+            textArea.select();
+            try {{
+                const successful = document.execCommand('copy');
+                if (successful) {{
+                    showNotification('コードをクリップボードにコピーしました: ' + text.substring(0, 16) + '...');
+                }} else {{
+                    alert('コード: ' + text);
+                }}
+            }} catch (err) {{
+                console.error('execCommand failed:', err);
+                alert('コード: ' + text);
+            }}
+            document.body.removeChild(textArea);
+        }}
         
         // View switching functions
         function showParallel() {{
@@ -399,10 +463,12 @@ def create_combined_html(mg_net, og_net, stats, blocks_info):
             
             // Create single MG network if not exists
             if (!mgSingleNetwork) {{
-                // Recreate MG network for single view
-                {mg_script.replace('document.getElementById("mg_', 'document.getElementById("mg_single_')}
-                mgSingleNetwork = network;
-                addClickHandler(mgSingleNetwork);
+                mgSingleNetwork = new vis.Network(
+                    document.getElementById('mg-single-network'),
+                    {{nodes: mgNodes, edges: mgEdges}},
+                    options
+                );
+                addClickHandler(mgSingleNetwork, 'MG-Single');
             }}
             
             updateActiveButton(1);
@@ -415,10 +481,12 @@ def create_combined_html(mg_net, og_net, stats, blocks_info):
             
             // Create single OG network if not exists
             if (!ogSingleNetwork) {{
-                // Recreate OG network for single view
-                {og_script.replace('document.getElementById("og_', 'document.getElementById("og_single_')}
-                ogSingleNetwork = network;
-                addClickHandler(ogSingleNetwork);
+                ogSingleNetwork = new vis.Network(
+                    document.getElementById('og-single-network'),
+                    {{nodes: ogNodes, edges: ogEdges}},
+                    options
+                );
+                addClickHandler(ogSingleNetwork, 'OG-Single');
             }}
             
             updateActiveButton(2);
@@ -454,19 +522,32 @@ def create_combined_html(mg_net, og_net, stats, blocks_info):
             document.body.appendChild(notification);
             
             setTimeout(() => {{
-                document.body.removeChild(notification);
+                if (document.body.contains(notification)) {{
+                    document.body.removeChild(notification);
+                }}
             }}, 3000);
         }}
         
-        // Initialize with parallel view
-        showParallel();
+        // Initialize when DOM is loaded
+        document.addEventListener('DOMContentLoaded', function() {{
+            console.log('DOM loaded, initializing...');
+            initNetworks();
+            showParallel();
+        }});
+        
+        // Also try to initialize after window load as fallback
+        window.addEventListener('load', function() {{
+            console.log('Window loaded');
+            if (!mgNetwork || !ogNetwork) {{
+                console.log('Networks not initialized, retrying...');
+                setTimeout(initNetworks, 100);
+            }}
+        }});
     </script>
 </body>
 </html>"""
     
-    # Write combined HTML to file
-    with open("fgdb_visualization.html", "w", encoding="utf-8") as f:
-        f.write(combined_html)
+    return html_content
 
 
 def print_graph_info(fgdb):
@@ -521,28 +602,21 @@ def main():
         # Print graph information and get blocks info for HTML
         blocks_info = print_graph_info(fgdb)
         
-        # Create pyvis networks
+        # Create vis.js compatible data
         print("\\nCreating interactive visualization...")
         
-        # Create Management Graph network
-        mg_net = create_network_graph(
-            fgdb.management_graph, 
-            fgdb.blocks, 
-            "Management Graph (MG)"
-        )
-        
-        # Create Operation Graph network
-        og_net = create_network_graph(
-            fgdb.operation_graph, 
-            fgdb.blocks, 
-            "Operation Graph (OG)"
-        )
+        mg_nodes, mg_edges = create_graph_data(fgdb.management_graph, fgdb.blocks)
+        og_nodes, og_edges = create_graph_data(fgdb.operation_graph, fgdb.blocks)
         
         # Get statistics
         stats = fgdb.get_statistics()
         
-        # Create combined HTML file
-        create_combined_html(mg_net, og_net, stats, blocks_info)
+        # Create HTML file
+        html_content = create_html_file(mg_nodes, mg_edges, og_nodes, og_edges, stats, blocks_info)
+        
+        # Write HTML file
+        with open("fgdb_visualization.html", "w", encoding="utf-8") as f:
+            f.write(html_content)
         
         print("✓ Interactive visualization created: fgdb_visualization.html")
         print("\\n🌐 Opening visualization in web browser...")
@@ -557,16 +631,6 @@ def main():
         print("• Use mouse wheel to zoom, drag to pan")
         print("• Use buttons to switch between parallel and single views")
         
-    except ImportError as e:
-        if "pyvis" in str(e):
-            print("Error: pyvis library not found")
-            print("Please install it with: pip install pyvis")
-        elif "pyperclip" in str(e):
-            print("Error: pyperclip library not found")
-            print("Please install it with: pip install pyperclip")
-        else:
-            print(f"Import error: {e}")
-        sys.exit(1)
     except Exception as e:
         print(f"Error during visualization: {e}")
         import traceback
